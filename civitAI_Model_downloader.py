@@ -200,7 +200,8 @@ def categorize_item(item):
 
 def download_model_files(username, item_name, model_version, item, download_type, exclude_type, failed_downloads_file):
     """Download all files for one model version, saving them in a version subfolder.
-    The preview image is saved in the version folder, and all additional images are saved in an 'examples' subfolder.
+    The preview image is saved in the version folder, additional images in an 'examples' subfolder,
+    and an additional JSON file (base.json) is created containing a simple description and notes.
     """
     model_id = item['id']
     model_id_formatted = f"{model_id:07d}"
@@ -222,7 +223,7 @@ def download_model_files(username, item_name, model_version, item, download_type
     os.makedirs(final_dir, exist_ok=True)
     
     model_url = f"https://civitai.com/models/{model_id}"
-        
+    
     # Determine a base file name from the first file entry (e.g. "kyl13-001" from "kyl13-001.pt").
     base_file_name = None
     files = model_version.get('files', [])
@@ -253,34 +254,30 @@ def download_model_files(username, item_name, model_version, item, download_type
             with open(failed_downloads_file, "a", encoding='utf-8') as f:
                 f.write(f"Item Name: {item_name}\nFile URL: {file_url}\n---\n")
     
-    # Download the preview image.
-    preview_url_used = None
+    # Download the preview image (first valid image).
     preview_filename = ""
     if base_file_name:
         preview_filename = f"{base_file_name}.preview.jpg"
     else:
         preview_filename = f"{item_name_sanitized}.preview.jpg"
     preview_path = os.path.join(final_dir, preview_filename)
-    
+    preview_url_used = None
     images = model_version.get('images', [])
     for image in images:
         if image.get("type", "image").lower() == "image":
             preview_url = image.get("url", "")
-            if preview_url:
-                if download_file_or_image(preview_url, preview_path, username):
-                    preview_url_used = preview_url
-                break  # Only use the first valid image as preview.
+            if preview_url and download_file_or_image(preview_url, preview_path, username):
+                preview_url_used = preview_url
+            break  # Use only the first valid image as preview.
     
-    # Create an "examples" subfolder for the other images.
+    # Create an "examples" subfolder for additional images.
     examples_dir = os.path.join(final_dir, "examples")
     os.makedirs(examples_dir, exist_ok=True)
-    
-    # Download remaining images (that are not the preview) into the examples folder.
     for image in images:
         image_url = image.get("url", "")
         if not image_url:
             continue
-        # Skip the image if it was used as preview.
+        # Skip if this image was used as the preview.
         if preview_url_used and image_url == preview_url_used:
             continue
         image_id = image.get('id', '')
@@ -297,7 +294,7 @@ def download_model_files(username, item_name, model_version, item, download_type
             with open(failed_downloads_file, "a", encoding='utf-8') as f:
                 f.write(f"Item Name: {item_name}\nImage URL: {image_url}\n---\n")
     
-    # Save the info file with the model's JSON using the base file name.
+    # Save the full info file with the model's JSON.
     if base_file_name:
         info_filename = f"{base_file_name}.civitai.info"
     else:
@@ -306,9 +303,27 @@ def download_model_files(username, item_name, model_version, item, download_type
     with open(info_path, "w", encoding="utf-8") as f:
         json.dump(item, f, indent=4)
     
+    # Create an additional JSON file (base.json) with only the description and trainedWords.
+    if base_file_name:
+        basejson_filename = f"{base_file_name}.json"
+    else:
+        basejson_filename = f"{item_name_sanitized}.json"
+    basejson_path = os.path.join(final_dir, basejson_filename)
+    # Use the cleaned description (strip HTML) and the trainedWords as notes.
+    clean_description = re.sub(r'<[^>]*>', '', item.get('description', ''))
+    trigger_words = model_version.get('trainedWords', [])
+    if isinstance(trigger_words, list):
+        notes = ", ".join(trigger_words)
+    else:
+        notes = str(trigger_words)
+    basejson_data = {
+        "description": clean_description,
+        "notes": notes
+    }
+    with open(basejson_path, "w", encoding="utf-8") as f:
+        json.dump(basejson_data, f, indent=4)
+    
     return item_name, downloaded, {}
-
-
 
 
 
