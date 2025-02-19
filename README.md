@@ -1,46 +1,59 @@
-# Civit-Model-grabber
-The script Supports different download types: Lora, Checkpoints, Embeddings, Training Data, Other, or All and related images from a given CivitAI username, organizing them into appropriate directories and maintaining details in a text file. 
+# CivitAI Model Downloader
 
-It's designed to download only the files that are not already present in the specified username's folder.
-If the user uploads new models, running the script again will download only the newly uploaded files.
+CivitAI Model Downloader is a Python script that downloads model files and related images from CivitAI based on one or more provided usernames. The downloaded content is organized into a well-structured directory tree, and detailed metadata is stored in text files. The script supports multiple download types (Lora, Checkpoints, Embeddings, Training Data, Other, or All) and only downloads files that aren’t already present, ensuring that only new models are fetched when re-run.
 
-**Example of Details.txt** 
-```
-Model URL: https://civitai.com/models/ID
-File Name: Name of the Model.ending
-File URL: https://civitai.com/api/download/models/ID
-Image ID: ID
-Image URL: https://image.civitai.com/Random_characters/width=450/ID.jpeg
-```
+## Features
 
-**File Structure**  <br /> 
-The downloaded files will be organized in the following structure:
+- **Selective Downloading**:  
+  Downloads only new files that aren’t already present in the user's folder. Running the script again will fetch only the newly uploaded models.
+
+- **Customizable Download Types**:  
+  Supports filtering by specific content types:
+  - `--download_type`: Download only the specified type (e.g., Lora, Checkpoints, etc.).
+  - `--exclude_type`: Download everything except the specified type.
+
+- **Enhanced Description Files**:  
+  The model description is cleaned of HTML tags and saved as a plain text file (`description.txt`), making it easier to read and process.
+
+- **Detailed Logging in a Dedicated Subfolder**:  
+  All log files are now stored in a `logs` subfolder:
+  - **Main Log**: `civitAI_Model_downloader.txt` contains execution details and errors.
+  - **Failed Downloads Log**: `failed_downloads_<username>.txt` stores any download errors.
+  - **Helper Script Error Log**: `fetch_all_models_ERROR_LOG.txt` logs errors from the helper script.
+
+- **Organized File Structure with Unique Model Folders**:  
+  Each model is saved in a uniquely named folder (with the model ID prepended to the model name, e.g., `4576 - ModelName`) under directories corresponding to the download type.
+
+## File Structure
+
+The downloaded files are organized as follows:
+
 ```
 model_downloads/
 ├── username1/
 │   ├── Lora/
 │   │   ├── SDXL 1.0/
-│   │   │   └── model1/
+│   │   │   └── 4576 - ModelName/
 │   │   │       ├── file1.safetensors
 │   │   │       ├── image1.jpeg
 │   │   │       ├── details.txt
 │   │   │       ├── triggerWords.txt
-│   │   │       └── description.html
+│   │   │       └── description.txt
 │   │   └── SD 1.5/
-│   │       └── model2/
-│   │           ├── file3.safetensors
+│   │       └── 7890 - AnotherModel/
+│   │           ├── file2.safetensors
 │   │           ├── image2.jpeg
 │   │           ├── details.txt
-│   │   │       ├── triggerWords.txt
-│   │           └── description.html
+│   │           ├── triggerWords.txt
+│   │           └── description.txt
 │   ├── Checkpoints/
 │   │   ├── FLUX/
-│   │   │   └── model1/
+│   │   │   └── 1234 - CheckpointModel/
 │   │   │       ├── file.safetensors
 │   │   │       ├── image.jpeg
 │   │   │       ├── details.txt
 │   │   │       ├── triggerWords.txt
-│   │   │       └── description.html       
+│   │   │       └── description.txt       
 │   ├── Embeddings/
 │   ├── Training_Data/
 │   └── Other/
@@ -52,196 +65,71 @@ model_downloads/
     └── Other/
 ```
 
-# How to  use
-```
-install Python3
-```
-```
-pip install -r requirements.txt
-```
-```
-python civitAI_Model_downloader.py one or multiple usernames space separated
-```
-You  can also  give the script this 5 extra Arguments
-```
---retry_delay 
-```
-+ default=10,
-+ "Retry delay in seconds."
-```
---max_tries
-```
-+ default=3,
-+ "Maximum number of retries."
-```
---max_threads
-```
- + default=5, 
- + "Maximum number of concurrent threads.Too many produces API Failure."
-```
---download_type
-```
-+ Lora
-+ Checkpoints
-+ Embeddings
-+ Training_Data
-+ Other
-+ Default = All
-```
---token 
-```
-default=None
-+ "It will only Download the Public availabe Models"
-+ "Provide a Token and it can also Download those Models behind the CivitAI Login."
-+ If you forgot to Provide a Token the Script asks for your token.
+## Example of `details.txt`
 
-**Helper script** `fetch_all_models.py`
 ```
-python fetch_all_models.py --username <USERNAME> --token <API_TOKEN>
-```
-**Example of username.txt created with helper script fetch_all_models.py**
-```
-Summary:
-Total - Count: 61
-Checkpoints - Count: 12
-Embeddings - Count: 33
-Lora - Count: 11
-Training_Data - Count: 2
-Other - Count: 3
-
-Detailed Listing:
-Checkpoints - Count: 12
-Checkpoints - Item: NAME
-...
-
-Embeddings - Count: 33
-Embeddings - Item: NAME - Embeddings
-...
-
-Lora - Count: 11
-Lora - Item: NAME
-...
-
-Training_Data - Count: 2
-Training_Data - Item: NAME_training_data.zip
-...
-
-Other - Count: 3
-Other - Item: NAME - Type: Other
-...
+Model URL: https://civitai.com/models/ID
+File Name: ModelName.ending
+File URL: https://civitai.com/api/download/models/ID
+Image ID: ID
+Image URL: https://image.civitai.com/Random_characters/width=450/ID.jpeg
 ```
 
+## Installation
 
-You can create your API Key here
- [Account Settings](https://civitai.com/user/account).
- Scoll down until  the end and you  find this Box
+1. **Clone the Repository:**
+   ```bash
+   git clone https://github.com/yourusername/CivitAI-Model-Downloader.git
+   cd CivitAI-Model-Downloader
+   ```
 
-![API](https://github.com/Confuzu/CivitAI-Model-grabber/assets/133601702/bc126680-62bd-41db-8211-a47b55d5fd36)
+2. **Install Dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
- # Updates & Bugfixes
+## Usage
 
-# 0.7 New Feature
-**Triggerwords text File**
-- Added functionality to create a "triggerWords.txt" file for each model.
-- This file contains the trigger words associated with the model.
-- The "triggerWords.txt" file is saved in the same directory as the model files.
+Run the main script by providing one or more CivitAI usernames:
+```bash
+python civitAI_Model_downloader.py username1 username2 --token YOUR_API_TOKEN --download_type Checkpoints
+```
+Or use the `--exclude_type` option to download everything except a specific type:
+```bash
+python civitAI_Model_downloader.py username1 --token YOUR_API_TOKEN --exclude_type Embeddings
+```
 
+### Additional Arguments
 
-# 0.6 New Feature
-**Base Model Folder Organization**
-- Implemented a new folder structure that organizes downloads based on their base model.
-- Downloads are now sorted into subfolders named after their respective base models within each category (Lora, Checkpoints, etc.).
-- This organization applies to all categories when base model information is available.
-- Folders for categories without base model information remain unchanged
-- Improved logging to track base model usage and any related issues.
+- `--retry_delay` (default: 10 seconds)  
+  Delay between retry attempts.
 
-# 0.5 New Feature 
-**Model Description Files**
-- These files contain the original description of the model as provided by the creator.
-- Description files which are HTML files that can be opened directly in a browser, saving the original descriptions provided by creators in the same directory as the corresponding model files.
+- `--max_tries` (default: 3)  
+  Maximum number of retries per download.
 
-# 0.4 New Features & Updates & Bugfixes 
+- `--max_threads` (default: 5)  
+  Maximum number of concurrent threads. (Too many threads may lead to API failures.)
 
-### New features:
-- **Download option for Training_Data added:**
-  - Automatically creates its own download folder.
-  - Saves downloaded ZIP packages, associated images and a `detail.txt` file.
+If no token is provided, the script will prompt you for one.
+
+## API Key
+
+To download models that are not public, you need an API token. Generate your API key in your CivitAI account settings under the API section.
+
+## Updates & Bugfixes
+
+- **Logging Enhancements:**  
+  All logs (execution, errors, and failed downloads) are now saved in a dedicated `logs` subfolder for easier organization.
+
+- **Improved Description Files:**  
+  Model descriptions are now saved as plain text (`description.txt`), with HTML tags removed for clarity.
+
+- **Unique Model Folder Naming:**  
+  Model IDs are now prepended to the model names in the folder structure to avoid naming conflicts.
   
-- **Introduction of a helper script `fetch_all_models.py`:**
-  - Retrieves model information from the CivitAI API based on username and API token.
-  - Categorizes the results and summarizes them in a text file `{username}.txt`.
-  - Improves the overview of the user content and enables the statistics function.
-  - Can also be used standalone with the following command:  
-    `python fetch_all_models.py --username <USERNAME> --token <API_TOKEN>`
+- **Images and Videos saved correctly:**
+  It now ensures that the files are saved with the appropriate extensions based on their content type.
 
-### Updates:
-- **Detection and categorization of new types:**
-  - Script now recognizes the types VAE and Locon and assigns them to the category "Other".
-  
-- **Improvement of the filter for problematic characters:**
-  - Optimization of filter functions to better handle problematic characters.
+---
 
-- **Code optimizations:**
-  - All global variables are now at the beginning of the script.
-  - No more functions inside other functions.
-  - Merge lines of code where appropriate for better readability and maintainability.
-  
-- **Correct allocation of ZIP packages:**
-  - ZIP packages are now downloaded to the appropriate folders according to API specifications, e.g. Training_Data, Lora, Other.
-  - ZIP packages without a specific category are still downloaded under "Other".
-
-### Bugfixes:
-- **Statistics fixed:**
-  - The statistics function is now based on the new helper script `fetch_all_models.py`, which improves accuracy and functionality.
-
-# 0.3 Bugfix & Changes
-
-Enhanced Character Filtering: <br /> 
-The script has been modified to extensively filter out forbidden and problematic characters to prevent issues during the folder creation process. <br />
-
-Error Handling Improvements: <br />
-In cases where the script encounters characters that prevent folder creation, it now logs the name and URL of the affected download. <br /> 
-This information is recorded in a pre-existing text file, which is automatically named after the user whose content is being downloaded. This update allows users to manually complete downloads if issues arise.<br />
-```
-failed_downloads_username.txt
-```
-Changed from Skipping image to Truncate when path length exceeding the limit. <br /> 
-
-
- # 0.2 New Features & Update & Bugfix 
-New long awaited Feature <br /> 
-
-Selective Download Options <br />
-Users can now choose to download specific content types: <br />
-Lora <br />
-Checkpoints <br />
-Embeddings <br />
-Other <br />
-Everything but Lora, Checkpoints, Embeddings (grouped under Other_Model_types for less frequently downloaded items) <br /> 
-All <br />
-is the Default Download Behavior: The default option to download all available content remains if no specific download parameters are set. <br /> 
-
-Command Line and Interactive Enhancements: <br /> 
-
-Command Line Arguments: Users can directly specify their download preference (Lora, Checkpoints, Embedding, Other or All) via command line alongside other startup parameters. <br /> 
-Interactive Mode: If no command line arguments are specified, the program will prompt users interactively to select the content they wish to download. Pressing the Enter key activates the default settings to download all content. <br /> 
-
-Folder Structure Update: <br /> 
-
-Organized Storage: The program’s folder structure has been reorganized to support new download options efficiently: <br />
-Main directory: model_downloads/ <br />
-User-specific subdirectory: Username/ <br />
-Content-specific subfolders for Lora, Checkpoints, Embeddings, and Other_Model_types each containing item-specific subfolders. <br />
-
-Bugfix <br /> 
-The script will no longer remove the file name if it is written in the same way as the folder name. This could happen from time to time due to the sanitization function of the script. 
-
-# 0.1 Better Errorhandling <br /> 
-New function to avoid OSError: [Errno 36] File name too long: <br /> 
-
-Pagination is fixed <br /> 
-New Function Multiple Usernames <br /> 
-
-
-
-
+Enjoy using the CivitAI Model Downloader! Contributions, suggestions, and bug reports are welcome.

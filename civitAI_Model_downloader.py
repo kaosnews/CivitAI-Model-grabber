@@ -9,17 +9,18 @@ from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 import time
 import argparse
-from fetch_all_models import fetch_all_models
-import sys
 
 # Constants
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG_FILE_PATH = os.path.join(SCRIPT_DIR, "civitAI_Model_downloader.txt")
+LOGS_DIR = os.path.join(SCRIPT_DIR, "logs")
+os.makedirs(LOGS_DIR, exist_ok=True)
+LOG_FILE_PATH = os.path.join(LOGS_DIR, "civitAI_Model_downloader.txt")
 OUTPUT_DIR = "model_downloads"
 MAX_PATH_LENGTH = 200
 VALID_DOWNLOAD_TYPES = ['Lora', 'Checkpoints', 'Embeddings', 'Training_Data', 'Other', 'All']
 BASE_URL = "https://civitai.com/api/v1/models"
 
+# Set up logging
 logger_md = logging.getLogger('md')
 logger_md.setLevel(logging.DEBUG)
 file_handler_md = logging.FileHandler(LOG_FILE_PATH, encoding='utf-8')
@@ -35,12 +36,37 @@ parser.add_argument("--retry_delay", type=int, default=10, help="Retry delay in 
 parser.add_argument("--max_tries", type=int, default=3, help="Maximum number of retries.")
 parser.add_argument("--max_threads", type=int, default=5, help="Maximum number of concurrent threads. Too many produces API Failure.")
 parser.add_argument("--token", type=str, default=None, help="API Token for Civitai.")
-parser.add_argument("--download_type", type=str, default=None, help="Specify the type of content to download: 'Lora', 'Checkpoints', 'Embeddings', 'Training_Data', 'Other', or 'All' (default).")
+
+# Mutually exclusive group for filtering options
+group = parser.add_mutually_exclusive_group()
+group.add_argument(
+    "--download_type",
+    type=str,
+    choices=VALID_DOWNLOAD_TYPES,
+    help="Specify the type of content to download: 'Lora', 'Checkpoints', 'Embeddings', 'Training_Data', 'Other', or 'All'."
+)
+group.add_argument(
+    "--exclude_type",
+    type=str,
+    choices=VALID_DOWNLOAD_TYPES,
+    help="Download all content except the specified type (cannot use with --download_type)."
+)
+
 args = parser.parse_args()
 
-# Prompt the user for the token if it's not provided via command line
+# Prompt the user for the token if not provided via command line
 if args.token is None:
     args.token = input("Please enter your Civitai API token: ")
+
+# Determine filtering options. They are mutually exclusive.
+download_type = None
+exclude_type = None
+if args.download_type:
+    download_type = args.download_type
+elif args.exclude_type:
+    exclude_type = args.exclude_type
+else:
+    download_type = 'All'
 
 # Initialize variables
 usernames = args.usernames
@@ -60,24 +86,9 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # Create session
 session = requests.Session()
 
-# Validate download type
-if args.download_type:
-    download_type = args.download_type
-    if download_type not in VALID_DOWNLOAD_TYPES:
-        print("Error: Invalid download type specified.")
-        print("Valid download types are: 'Lora', 'Checkpoints', 'Embeddings', 'Training_Data', 'Other', or 'All'.")
-        sys.exit(1)
-else:
-    while True:
-        download_type = input("Please enter the type of content to download (Lora, Checkpoints, Embeddings, 'Training_Data', Other, or All): ")
-        if download_type in VALID_DOWNLOAD_TYPES:
-            break
-        else:
-            print("Invalid download type. Please try again.")
-
 def read_summary_data(username):
-    """Read summary data from a file."""
-    summary_path = os.path.join(SCRIPT_DIR, f"{username}.txt")
+    """Read summary data from a file in the logs subfolder."""
+    summary_path = os.path.join(LOGS_DIR, f"{username}.txt")
     data = {}
     try:
         with open(summary_path, 'r', encoding='utf-8') as file:
@@ -112,7 +123,7 @@ def sanitize_name(name, folder_name=None, max_length=MAX_PATH_LENGTH, subfolder=
 
     # Reduce multiple underscores to single and trim leading/trailing underscores and dots
     base_name = re.sub(r'__+', '_', base_name).strip('_.')
-    
+
     # Calculate max length of base name considering the path length
     if subfolder and output_dir and username:
         path_length = len(os.path.join(output_dir, username, subfolder))
@@ -122,13 +133,11 @@ def sanitize_name(name, folder_name=None, max_length=MAX_PATH_LENGTH, subfolder=
     sanitized_name = base_name + extension
     return sanitized_name.strip()
 
-
 def download_file_or_image(url, output_path, retry_count=0, max_retries=max_tries):
-    """Download a file or image from the provided URL."""
-    # Check if the file already exists
+    """Download a file or image from the provided URL and determine the correct file extension."""
     if os.path.exists(output_path):
         return False
-    
+
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     progress_bar = None
     try:
@@ -137,6 +146,19 @@ def download_file_or_image(url, output_path, retry_count=0, max_retries=max_trie
             print(f"File not found: {url}")
             return False
         response.raise_for_status()
+
+        # Determine the file extension based on the Content-Type header
+        content_type = response.headers.get('Content-Type', '')
+        if 'image' in content_type:
+            file_extension = '.jpg'  # You can further refine this based on specific image types
+        elif 'video' in content_type:
+            file_extension = '.mp4'  # You can further refine this based on specific video types
+        else:
+            file_extension = os.path.splitext(output_path)[1]  # Keep the original extension if not image/video
+
+        # Update the output path with the correct extension
+        output_path = os.path.splitext(output_path)[0] + file_extension
+
         total_size = int(response.headers.get('content-length', 0))
         progress_bar = tqdm(total=total_size, unit='B', unit_scale=True, leave=False)
         with open(output_path, "wb") as file:
@@ -145,28 +167,30 @@ def download_file_or_image(url, output_path, retry_count=0, max_retries=max_trie
                     progress_bar.update(len(chunk))
                     file.write(chunk)
         progress_bar.close()
+
         if output_path.endswith('.safetensor') and os.path.getsize(output_path) < 4 * 1024 * 1024:  # 4MB
             if retry_count < max_retries:
-                print(f"File {output_path} is smaller than expected. Try to download again (attempt {retry_count}).")
+                print(f"File {output_path} is smaller than expected. Retrying download (attempt {retry_count}).")
                 time.sleep(retry_delay)
                 return download_file_or_image(url, output_path, retry_count + 1, max_retries)
             else:
-                download_errors_log = os.path.join(SCRIPT_DIR, f'{username}.download_errors.log')
+                # Save download error log in the logs subfolder
+                download_errors_log = os.path.join(LOGS_DIR, f'{username}.download_errors.log')
                 with open(download_errors_log, 'a', encoding='utf-8') as log_file:
                     log_file.write(f"Failed to download {url} after {max_retries} attempts.\n")
                 return False
         return True
-    except (requests.RequestException, Exception)as e:
+    except (requests.RequestException, Exception) as e:
         if retry_count < max_retries:
             print(f"Error downloading {url}: {e}. Retrying in {retry_delay} seconds (attempt {retry_count}).")
             time.sleep(retry_delay)
             return download_file_or_image(url, output_path, retry_count + 1, max_retries)
         else:
-            download_errors_log = os.path.join(SCRIPT_DIR, f'{username}.download_errors.log')
+            download_errors_log = os.path.join(LOGS_DIR, f'{username}.download_errors.log')
             with open(download_errors_log, 'a', encoding='utf-8') as log_file:
                 log_file.write(f"Failed to download {url} after {max_retries} attempts. Error: {e}\n")
             return False
-    except (requests.RequestException, TimeoutError, ConnectionResetError) as e:
+    except (TimeoutError, ConnectionResetError) as e:
         if progress_bar:
             progress_bar.close()
         if retry_count < max_retries:
@@ -174,34 +198,35 @@ def download_file_or_image(url, output_path, retry_count=0, max_retries=max_trie
             time.sleep(retry_delay)
             return download_file_or_image(url, output_path, retry_count + 1, max_retries)
         else:
-            download_errors_log = os.path.join(SCRIPT_DIR, f'{username}.download_errors.log')
+            download_errors_log = os.path.join(LOGS_DIR, f'{username}.download_errors.log')
             with open(download_errors_log, 'a', encoding='utf-8') as log_file:
                 log_file.write(f"Error downloading file {output_path} from URL {url}: {e} after {max_retries} attempts\n")
             return False
     return True
 
-def download_model_files(item_name, model_version, item, download_type, failed_downloads_file):
+
+def download_model_files(item_name, model_version, item, download_type, exclude_type, failed_downloads_file):
     """Download related image and model files for each model version."""
     files = model_version.get('files', [])
     images = model_version.get('images', [])
     downloaded = False
     model_id = item['id']
     model_url = f"https://civitai.com/models/{model_id}"
-    item_name_sanitized = sanitize_name(item_name, max_length=MAX_PATH_LENGTH)
+    # Prepend the model ID to the model name
+    model_name_with_id = f"{model_id} - {item_name}"
+    item_name_sanitized = sanitize_name(model_name_with_id, max_length=MAX_PATH_LENGTH)
     model_images = {}
     item_dir = None
 
-    # Extract the description and baseModel
     description = item.get('description', '')
     base_model = item.get('baseModel')
-    trigger_words =  model_version.get('trainedWords', [])
-    
+    trigger_words = model_version.get('trainedWords', [])
 
     for file in files:
         file_name = file.get('name', '')
         file_url = file.get('downloadUrl', '')
 
-        # Determine subfolder (existing logic)
+        # Determine subfolder based on file extension and item type
         if file_name.endswith('.zip'):
             if 'type' in item and item['type'] == 'LORA':
                 subfolder = 'Lora'
@@ -229,16 +254,21 @@ def download_model_files(item_name, model_version, item, download_type, failed_d
         else:
             subfolder = 'Other'
 
-        if download_type != 'All' and download_type != subfolder:
-            continue
+        # Apply filtering based on user options:
+        if download_type is not None:
+            if download_type != 'All' and subfolder != download_type:
+                continue
+        elif exclude_type is not None:
+            if subfolder == exclude_type:
+                continue
 
-        # Create folder structure
+        # Create folder structure using the sanitized model name (with id)
         if base_model:
             item_dir = os.path.join(OUTPUT_DIR, username, subfolder, base_model, item_name_sanitized)
-            logging.info(f"Using baseModel folder structure for {item_name}: {base_model}")
+            logging.info(f"Using baseModel folder structure for {item_name} (ID: {model_id}): {base_model}")
         else:
             item_dir = os.path.join(OUTPUT_DIR, username, subfolder, item_name_sanitized)
-            logging.info(f"No baseModel found for {item_name}, using standard folder structure")
+            logging.info(f"No baseModel found for {item_name} (ID: {model_id}), using standard folder structure")
 
         try:
             os.makedirs(item_dir, exist_ok=True)
@@ -250,17 +280,19 @@ def download_model_files(item_name, model_version, item, download_type, failed_d
                 f.write("---\n")
             return item_name, False, model_images
 
-        # Create and write to the description file
-        description_file = os.path.join(item_dir, "description.html")
+        # Write description (with HTML tags removed) and trigger words to files
+        description_file = os.path.join(item_dir, "description.txt")
+        # Remove HTML tags from description
+        clean_description = re.sub(r'<[^>]*>', '', description)
         with open(description_file, "w", encoding='utf-8') as f:
-            f.write(description)
-
+            f.write(clean_description)
 
         trigger_words_file = os.path.join(item_dir, "triggerWords.txt")
         with open(trigger_words_file, "w", encoding='utf-8') as f:
             for word in trigger_words:
                 f.write(f"{word}\n")
 
+        # Append token and nsfw parameter to URL
         if '?' in file_url:
             file_url += f"&token={token}&nsfw=true"
         else:
@@ -282,7 +314,7 @@ def download_model_files(item_name, model_version, item, download_type, failed_d
                 f.write(f"File URL: {file_url}\n")
                 f.write("---\n")
 
-        details_file = sanitize_directory_name(os.path.join(item_dir, "details.txt"))
+        details_file = os.path.join(item_dir, "details.txt")
         with open(details_file, "a", encoding='utf-8') as f:
             f.write(f"Model URL: {model_url}\n")
             f.write(f"File Name: {file_name}\n")
@@ -309,26 +341,39 @@ def download_model_files(item_name, model_version, item, download_type, failed_d
                     f.write(f"Image URL: {image_url}\n")
                     f.write("---\n")
 
-            details_file = sanitize_directory_name(os.path.join(item_dir, "details.txt"))
+            details_file = os.path.join(item_dir, "details.txt")
             with open(details_file, "a", encoding='utf-8') as f:
                 f.write(f"Image ID: {image_id}\n")
                 f.write(f"Image URL: {image_url}\n")
 
     return item_name, downloaded, model_images
 
-def process_username(username, download_type):
+def process_username(username, download_type, exclude_type=None):
     """Process a username and download the specified type of content."""
-    print(f"Processing username: {username}, Download type: {download_type}")
+    if download_type is not None:
+        print(f"Processing username: {username}, Download type: {download_type}")
+    elif exclude_type is not None:
+        print(f"Processing username: {username}, Excluding type: {exclude_type}")
+
     fetch_user_data = fetch_all_models(token, username)
     summary_data = read_summary_data(username)
     total_items = summary_data.get('Total', 0)
 
-    if download_type == 'All':
-        selected_type_count = total_items
-        intentionally_skipped = 0
-    else:
-        selected_type_count = summary_data.get(download_type, 0)
-        intentionally_skipped = total_items - selected_type_count
+    if download_type is not None:
+        if download_type == 'All':
+            selected_type_count = total_items
+            intentionally_skipped = 0
+        else:
+            selected_type_count = summary_data.get(download_type, 0)
+            intentionally_skipped = total_items - selected_type_count
+    elif exclude_type is not None:
+        selected_type_count = total_items - summary_data.get(exclude_type, 0)
+        intentionally_skipped = summary_data.get(exclude_type, 0)
+
+    # Save failed downloads log in the logs subfolder.
+    failed_downloads_file = os.path.join(LOGS_DIR, f"failed_downloads_{username}.txt")
+    with open(failed_downloads_file, "w", encoding='utf-8') as f:
+        f.write(f"Failed Downloads for Username: {username}\n\n")
 
     params = {
         "username": username,
@@ -339,10 +384,6 @@ def process_username(username, download_type):
     headers = {
         "Content-Type": "application/json"
     }
-
-    failed_downloads_file = os.path.join(SCRIPT_DIR, f"failed_downloads_{username}.txt")
-    with open(failed_downloads_file, "w", encoding='utf-8') as f:
-        f.write(f"Failed Downloads for Username: {username}\n\n")
 
     initial_url = url
     next_page = url
@@ -355,20 +396,20 @@ def process_username(username, download_type):
 
         retry_count = 0
         max_retries = max_tries
-        retry_delay = args.retry_delay
+        current_retry_delay = args.retry_delay
 
         while retry_count < max_retries:
             try:
                 response = session.get(next_page, headers=headers)
                 response.raise_for_status()
                 data = response.json()
-                break  # Exit retry loop on successful response
+                break
             except (requests.RequestException, TimeoutError, json.JSONDecodeError) as e:
                 print(f"Error making API request or decoding JSON response: {e}")
                 retry_count += 1
                 if retry_count < max_retries:
-                    print(f"Retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
+                    print(f"Retrying in {current_retry_delay} seconds...")
+                    time.sleep(current_retry_delay)
                 else:
                     print("Maximum retries exceeded. Exiting.")
                     exit()
@@ -399,19 +440,39 @@ def process_username(username, download_type):
                 # Include baseModel in the item dictionary
                 item_with_base_model = item.copy()
                 item_with_base_model['baseModel'] = version.get('baseModel')
-                
-                future = executor.submit(download_model_files, item_name, version, item_with_base_model, download_type, failed_downloads_file)
+
+                future = executor.submit(
+                    download_model_files,
+                    item_name,
+                    version,
+                    item_with_base_model,
+                    download_type,
+                    exclude_type,
+                    failed_downloads_file
+                )
                 download_futures.append(future)
 
         for future in tqdm(download_futures, desc="Downloading Files", unit="file", leave=False):
             future.result()
 
         executor.shutdown()
-    
-    if download_type == 'All':
-        downloaded_count = sum(len(os.listdir(os.path.join(OUTPUT_DIR, username, category))) for category in ['Lora', 'Checkpoints', 'Embeddings', 'Training_Data', 'Other'] if os.path.exists(os.path.join(OUTPUT_DIR, username, category)))
-    else:
-        downloaded_count = len(os.listdir(os.path.join(OUTPUT_DIR, username, download_type))) if os.path.exists(os.path.join(OUTPUT_DIR, username, download_type)) else 0
+
+    # Calculate downloaded count based on filtering option
+    if download_type is not None:
+        if download_type == 'All':
+            downloaded_count = sum(
+                len(os.listdir(os.path.join(OUTPUT_DIR, username, category)))
+                for category in ['Lora', 'Checkpoints', 'Embeddings', 'Training_Data', 'Other']
+                if os.path.exists(os.path.join(OUTPUT_DIR, username, category))
+            )
+        else:
+            downloaded_count = len(os.listdir(os.path.join(OUTPUT_DIR, username, download_type))) if os.path.exists(os.path.join(OUTPUT_DIR, username, download_type)) else 0
+    elif exclude_type is not None:
+        categories = [cat for cat in ['Lora', 'Checkpoints', 'Embeddings', 'Training_Data', 'Other'] if cat != exclude_type]
+        downloaded_count = sum(
+            len(os.listdir(os.path.join(OUTPUT_DIR, username, cat)))
+            for cat in categories if os.path.exists(os.path.join(OUTPUT_DIR, username, cat))
+        )
 
     failed_count = selected_type_count - downloaded_count
 
@@ -420,6 +481,99 @@ def process_username(username, download_type):
     print(f"Intentionally skipped items for username {username}: {intentionally_skipped}")
     print(f"Failed items for username {username}: {failed_count}")
 
+def categorize_item(item):
+    """Categorize the item based on JSON type."""
+    item_type = item.get("type", "").upper()
+    file_name = item.get("name", "")
+
+    if item_type == 'CHECKPOINT':
+        return 'Checkpoints'
+    elif item_type == 'TEXTUALINVERSION':
+        return 'Embeddings'
+    elif item_type == 'LORA':
+        return 'Lora'
+    elif item_type == 'TRAINING_DATA':
+        return 'Training_Data'
+    else:
+        return 'Other'
+
+def search_for_training_data_files(item):
+    """Search for files with type 'Training Data' in the item's model versions."""
+    training_data_files = []
+    model_versions = item.get("modelVersions", [])
+    for version in model_versions:
+        for file in version.get("files", []):
+            if file.get("type") == "Training Data":
+                training_data_files.append(file.get("name", ""))
+    return training_data_files
+
+def fetch_all_models(token, username):
+    base_url = "https://civitai.com/api/v1/models"
+    categorized_items = {
+        'Checkpoints': [],
+        'Embeddings': [],
+        'Lora': [],
+        'Training_Data': [],
+        'Other': []
+    }
+    other_item_types = []
+
+    next_page = f"{base_url}?username={username}&token={token}&nsfw=true"
+    first_next_page = None
+
+    while next_page:
+        response = requests.get(next_page)
+        data = response.json()
+        for item in data.get("items", []):
+            try:
+                # Check for top-level categorization.
+                category = categorize_item(item)
+                categorized_items[category].append(item.get("name", ""))
+
+                # Check for deep nested "Training Data" files.
+                training_data_files = search_for_training_data_files(item)
+                if training_data_files:
+                    categorized_items['Training_Data'].extend(training_data_files)
+
+                if category == 'Other':
+                    other_item_types.append((item.get("name", ""), item.get("type", None)))
+            except Exception as e:
+                logger_md.error(f"Error categorizing item: {item} - {e}")
+
+        metadata = data.get('metadata', {})
+        next_page = metadata.get('nextPage')
+        if first_next_page is None:
+            first_next_page = next_page
+        # Termination condition: break if the nextPage URL repeats or metadata is empty.
+        if next_page and next_page == first_next_page and next_page != next_page or not metadata:
+            logger_md.error("Termination condition met: first nextPage URL repeated.")
+            break
+
+    total_count = sum(len(items) for items in categorized_items.values())
+
+    # Write the summary file to the logs subfolder.
+    summary_file_path = os.path.join(LOGS_DIR, f"{username}.txt")
+    with open(summary_file_path, "w", encoding='utf-8') as file:
+        file.write("Summary:\n")
+        file.write(f"Total - Count: {total_count}\n")
+        for category, items in categorized_items.items():
+            file.write(f"{category} - Count: {len(items)}\n")
+        file.write("\nDetailed Listing:\n")
+
+        # Write the detailed listing.
+        for category, items in categorized_items.items():
+            file.write(f"{category} - Count: {len(items)}\n")
+            if category == 'Other':
+                for item_name, item_type in other_item_types:
+                    file.write(f"{category} - Item: {item_name} - Type: {item_type}\n")
+            else:
+                for item_name in items:
+                    file.write(f"{category} - Item: {item_name}\n")
+            file.write("\n")
+
+    return categorized_items
+
+
 if __name__ == "__main__":
     for username in usernames:
-        process_username(username, download_type)
+        process_username(username, download_type, exclude_type)
