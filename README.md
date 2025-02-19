@@ -1,135 +1,56 @@
-# CivitAI Model Downloader
+# civitAI Model Downloader
 
-CivitAI Model Downloader is a Python script that downloads model files and related images from CivitAI based on one or more provided usernames. The downloaded content is organized into a well-structured directory tree, and detailed metadata is stored in text files. The script supports multiple download types (Lora, Checkpoints, Embeddings, Training Data, Other, or All) and only downloads files that aren’t already present, ensuring that only new models are fetched when re-run.
+This Python script downloads models, images, and associated data from the civitAI API based on one or more provided usernames. It supports various filtering options and organizes downloads into a clear, hierarchical folder structure.
 
 ## Features
 
-- **Selective Downloading**:  
-  Downloads only new files that aren’t already present in the user's folder. Running the script again will fetch only the newly uploaded models.
-
-- **Customizable Download Types**:  
-  Supports filtering by specific content types:
-  - `--download_type`: Download only the specified type (e.g., Lora, Checkpoints, etc.).
-  - `--exclude_type`: Download everything except the specified type.
-
-- **Enhanced Description Files**:  
-  The model description is cleaned of HTML tags and saved as a plain text file (`description.txt`), making it easier to read and process.
-
-- **Detailed Logging in a Dedicated Subfolder**:  
-  All log files are now stored in a `logs` subfolder:
-  - **Main Log**: `civitAI_Model_downloader.txt` contains execution details and errors.
-  - **Failed Downloads Log**: `failed_downloads_<username>.txt` stores any download errors.
-  - **Helper Script Error Log**: `fetch_all_models_ERROR_LOG.txt` logs errors from the helper script.
-
-- **Organized File Structure with Unique Model Folders**:  
-  Each model is saved in a uniquely named folder (with the model ID prepended to the model name, e.g., `4576 - ModelName`) under directories corresponding to the download type.
-
-## File Structure
-
-The downloaded files are organized as follows:
-
-```
-model_downloads/
-├── username1/
-│   ├── Lora/
-│   │   ├── SDXL 1.0/
-│   │   │   └── 4576 - ModelName/
-│   │   │       ├── file1.safetensors
-│   │   │       ├── image1.jpeg
-│   │   │       ├── details.txt
-│   │   │       ├── triggerWords.txt
-│   │   │       └── description.txt
-│   │   └── SD 1.5/
-│   │       └── 7890 - AnotherModel/
-│   │           ├── file2.safetensors
-│   │           ├── image2.jpeg
-│   │           ├── details.txt
-│   │           ├── triggerWords.txt
-│   │           └── description.txt
-│   ├── Checkpoints/
-│   │   ├── FLUX/
-│   │   │   └── 1234 - CheckpointModel/
-│   │   │       ├── file.safetensors
-│   │   │       ├── image.jpeg
-│   │   │       ├── details.txt
-│   │   │       ├── triggerWords.txt
-│   │   │       └── description.txt       
-│   ├── Embeddings/
-│   ├── Training_Data/
-│   └── Other/
-└── username2/
-    ├── Lora/
-    ├── Checkpoints/
-    ├── Embeddings/
-    ├── Training_Data/
-    └── Other/
-```
-
-## Example of `details.txt`
-
-```
-Model URL: https://civitai.com/models/ID
-File Name: ModelName.ending
-File URL: https://civitai.com/api/download/models/ID
-Image ID: ID
-Image URL: https://image.civitai.com/Random_characters/width=450/ID.jpeg
-```
-
-## Installation
-
-1. **Clone the Repository:**
-   ```bash
-   git clone https://github.com/yourusername/CivitAI-Model-Downloader.git
-   cd CivitAI-Model-Downloader
-   ```
-
-2. **Install Dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+- **Multi-User Support:** Supply one or more usernames from which to download models.
+- **Filtering Options:**  
+  - Use `--download_type` to download only a specific type (e.g., Lora, Checkpoints, Embeddings, Training_Data, Other, or All).  
+  - Use `--exclude_type` to download all content except a specified type.
+- **Folder Structure:**  
+  - Models are grouped by username and primary category (determined by the model type).  
+  - If available, the base model is included as an additional grouping level.
+  - **Version Subfolders:**  
+    Each model may have multiple versions. For each version, a subfolder is created _using the version’s “name” field. This keeps different iterations of a model neatly separated.
+- **Image Organization:**  
+  - The first valid image is downloaded as the preview and saved in the version folder.
+  - All additional images (examples) are stored in an `examples` subfolder within the version folder.
+- **Logging:**  
+  - All logs (e.g., download errors and summary files) are saved in a dedicated `logs` folder.
 
 ## Usage
 
-Run the main script by providing one or more CivitAI usernames:
-```bash
-python civitAI_Model_downloader.py username1 username2 --token YOUR_API_TOKEN --download_type Checkpoints
-```
-Or use the `--exclude_type` option to download everything except a specific type:
-```bash
-python civitAI_Model_downloader.py username1 --token YOUR_API_TOKEN --exclude_type Embeddings
-```
+1. **Command-Line Arguments:**
+   - **Usernames:** Provide one or more usernames (positional arguments).
+   - **Token:** Use `--token` to provide your civitAI API token (if not provided, you will be prompted).
+   - **Filtering:** Use either `--download_type` or `--exclude_type` (mutually exclusive) to control what content to download.
+   - **Retries, Threads, etc.:** Other options include `--retry_delay`, `--max_tries`, and `--max_threads`.
 
-### Additional Arguments
+2. **Example Command:**
 
-- `--retry_delay` (default: 10 seconds)  
-  Delay between retry attempts.
+   ```bash
+   python civitAI_Model_downloader.py username1 username2 --token YOUR_API_TOKEN --download_type Checkpoints
+   ```
 
-- `--max_tries` (default: 3)  
-  Maximum number of retries per download.
+3. **Output Structure:**
 
-- `--max_threads` (default: 5)  
-  Maximum number of concurrent threads. (Too many threads may lead to API failures.)
+   The downloaded content is organized under the `model_downloads` folder following this hierarchy:
 
-If no token is provided, the script will prompt you for one.
+   ```
+   model_downloads/
+       └── username/
+           └── PrimaryCategory/        # (e.g., Checkpoints, Lora, etc.)
+               └── [BaseModel]/        # (if available)
+                   └── "ID - ModelName"/
+                       └── VersionName/  # e.g., "Version v1.0"
+                           ├── mytiname-001.pt               # Model file(s)
+                           ├── mytiname-001.preview.jpg      # Preview image (first valid image)
+                           ├── examples/                  # Other example images
+                           │    ├── <other_image_files>.jpeg
+                           └── mytiname.civitai.info     # Full JSON info file
+   ```
 
-## API Key
+4. **Logs:**
 
-To download models that are not public, you need an API token. Generate your API key in your CivitAI account settings under the API section.
-
-## Updates & Bugfixes
-
-- **Logging Enhancements:**  
-  All logs (execution, errors, and failed downloads) are now saved in a dedicated `logs` subfolder for easier organization.
-
-- **Improved Description Files:**  
-  Model descriptions are now saved as plain text (`description.txt`), with HTML tags removed for clarity.
-
-- **Unique Model Folder Naming:**  
-  Model IDs are now prepended to the model names in the folder structure to avoid naming conflicts.
-  
-- **Images and Videos saved correctly:**
-  It now ensures that the files are saved with the appropriate extensions based on their content type.
-
----
-
-Enjoy using the CivitAI Model Downloader! Contributions, suggestions, and bug reports are welcome.
+   All log files (download errors, summaries, etc.) are saved in the `logs` subfolder.
