@@ -211,9 +211,13 @@ def download_model_files(item_name, model_version, item, download_type, exclude_
     images = model_version.get('images', [])
     downloaded = False
     model_id = item['id']
+
+    # Format the model ID to be 7 digits long with leading zeros
+    model_id_formatted = f"{model_id:07d}"
+
     model_url = f"https://civitai.com/models/{model_id}"
-    # Prepend the model ID to the model name
-    model_name_with_id = f"{model_id} - {item_name}"
+    # Prepend the formatted model ID to the model name
+    model_name_with_id = f"{model_id_formatted} - {item_name}"
     item_name_sanitized = sanitize_name(model_name_with_id, max_length=MAX_PATH_LENGTH)
     model_images = {}
     item_dir = None
@@ -347,6 +351,7 @@ def download_model_files(item_name, model_version, item, download_type, exclude_
                 f.write(f"Image URL: {image_url}\n")
 
     return item_name, downloaded, model_images
+
 
 def process_username(username, download_type, exclude_type=None):
     """Process a username and download the specified type of content."""
