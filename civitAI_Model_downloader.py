@@ -402,6 +402,17 @@ def process_username(username, download_type, exclude_type=None):
         downloaded_item_names = set()
         
         for item in items:
+             # Determine the item's category
+            item_category = categorize_item(item)
+            
+            # Handle exclude_type
+            if exclude_type is not None:
+                if item_category == exclude_type:
+                    continue  # Skip this item
+            # Handle download_type (excluding 'All')
+            elif download_type is not None and download_type != 'All':
+                if item_category != download_type:
+                    continue  # Skip this item
             item_name = item['name']
             model_versions = item['modelVersions']
             if item_name in downloaded_item_names:
